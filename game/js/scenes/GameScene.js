@@ -15,7 +15,7 @@ import { now } from '../input/ShakeInput.js';
 import { loadSetting, saveSetting } from '../util/Settings.js';
 import { iconKey, silhouetteKey } from './BootScene.js';
 import { t, levelName, chapterSubtitle, formatNumber } from '../i18n.js';
-import { Economy } from '../game/Economy.js';
+import { Economy, REWARD_MULTIPLIER } from '../game/Economy.js';
 import { platform } from '../platform/platform.js';
 import { UI_COLORS, createButton, drawStar, hexColor, uiFont, softShadow, fitWidth, safeTop } from '../ui/widgets.js';
 import {
@@ -116,6 +116,7 @@ export class GameScene extends Phaser.Scene {
         this.shownRemaining = -1;
         this.nextMilestone = 0;
         this.leaving = false;
+        this.adClaimed = false;
         this.combo = new Combo(COMBO);
         // Ритм заводится в момент падения капли — см. onDropImpact
         this.rhythm = null;
@@ -1042,7 +1043,9 @@ export class GameScene extends Phaser.Scene {
         const cx = L.width / 2;
         const cy = L.height / 2;
         const width = 600;
-        const height = isWin ? 700 : 402;
+        // Ролик за награду: кнопка «×2 монет» под строкой с монетами — панель выше на её высоту
+        const offerAd = isWin && coins > 0 && platform.ads.supportsRewarded;
+        const height = isWin ? (offerAd ? 780 : 700) : 402;
         const top = cy - height / 2;
         const items = [];
         const add = (obj) => {
@@ -1084,6 +1087,7 @@ export class GameScene extends Phaser.Scene {
         if (isWin) glints(this, cx, top + 120, width - 80, 260, { color: UI_COLORS.gold, depth: PANEL_DEPTH + 1 });
 
         let y = top + 142;
+        let coinsText = null;   // Строка монет: после ролика в ней двойная сумма
         if (isWin) {
             // Звёзды появляются по одной — каждая со звоном (всё выше), искрами и щелчком вибрации
             for (let s = 0; s < 3; s++) {
@@ -1134,7 +1138,7 @@ export class GameScene extends Phaser.Scene {
             }
             if (coins > 0) {
                 y += 44;
-                add(fitWidth(this.add.text(cx, y, t('coinsEarned', { n: coins }), {
+                coinsText = add(fitWidth(this.add.text(cx, y, t('coinsEarned', { n: coins }), {
                     font: uiFont(26), color: UI_COLORS.goldText
                 }).setOrigin(0.5), width - 40));
             }
@@ -1154,14 +1158,46 @@ export class GameScene extends Phaser.Scene {
             }).setOrigin(0.5), width - 40));
         }
 
-        // Кнопки внизу панели
+        // Кнопки внизу панели. Уход с итогов — момент для ролика между уровнями (platform.ads.interstitial
+        // сам решает, можно ли: не рано в сессии, не чаще раза в две минуты, площадка поддерживает)
         const buttonsY = top + height - 70;
         const hasNext = isWin && this.levelIndex + 1 < LEVELS.length;
+        const leave = (scene, data) => async () => {
+            if (this.leaving) return;
+            this.leaving = true;
+            await platform.ads.interstitial();
+            goToScene(this, scene, data);
+        };
         const buttons = [
-            { label: t('levels'), onClick: () => goToScene(this, 'LevelSelect') },
-            { label: t('retry'), onClick: () => goToScene(this, 'Game', { levelIndex: this.levelIndex }) }
+            { label: t('levels'), onClick: leave('LevelSelect') },
+            { label: t('retry'), onClick: leave('Game', { levelIndex: this.levelIndex }) }
         ];
-        if (hasNext) buttons.push({ label: t('next'), onClick: () => goToScene(this, 'Game', { levelIndex: this.levelIndex + 1 }) });
+        if (hasNext) buttons.push({ label: t('next'), onClick: leave('Game', { levelIndex: this.levelIndex + 1 }) });
+
+        // Ролик за награду: игрок сам решает, награда только за досмотренный до конца
+        if (offerAd) {
+            const adY = top + height - 70 - 40 - 64;
+            let adButton = null;
+            const claim = async () => {
+                if (this.adClaimed) return;
+                this.adClaimed = true;
+                adButton.setAlpha(0.5);
+                const watched = await platform.ads.rewarded();
+                if (!watched) {
+                    // Не досмотрел или ролика нет: кнопку возвращаем, игра идёт как была
+                    this.adClaimed = false;
+                    adButton.setAlpha(1);
+                    return;
+                }
+                this.economy.add(coins * (REWARD_MULTIPLIER - 1));
+                if (coinsText) coinsText.setText(t('coinsEarned', { n: coins * REWARD_MULTIPLIER }));
+                adButton.destroy();
+                popText(this, cx, adY, t('adDone'), { color: UI_COLORS.goldText, size: 40 });
+                this.sfx.chime(4);
+                this.haptics.pulse(0.6, true);
+            };
+            adButton = add(createButton(this, { x: cx, y: adY, width: 460, height: 64, label: t('adDouble'), fontSize: 24, onClick: claim, color: 0x2a6b3a }));
+        }
         const buttonWidth = 170;
         const buttonObjects = buttons.map((b, i) => {
             const x = cx + (i - (buttons.length - 1) / 2) * (buttonWidth + 16);

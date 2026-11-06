@@ -16,7 +16,8 @@ const none = {
     gameplayStop() {},
     muted: false,
     onMuteChange() {},
-    storage: null
+    storage: null,
+    ads: null
 };
 
 async function pick() {
@@ -44,6 +45,15 @@ const INIT_TIMEOUT = 5;    // с: дольше ждать площадку не�
 
 let adapter = none;
 let playing = false;   // Идёт ли игровой процесс; SDK ждёт пары start/stop, а не повторов
+
+// Реклама. Площадка сама ограничивает частоту, но игроку это тоже ощущается, поэтому свои пределы:
+// первый ролик не раньше чем через FIRST_AD_AFTER с сессии, дальше не чаще раза в AD_GAP с
+const FIRST_AD_AFTER = 120;
+const AD_GAP = 120;
+const sessionStart = Date.now();
+let lastInterstitial = 0;
+let adBusy = false;
+let adHooks = { start() {}, end() {} };   // Звук на время ролика: ставит игра
 
 export const platform = {
     get name() {
@@ -84,6 +94,57 @@ export const platform = {
         if (!playing) return;
         playing = false;
         safe(() => adapter.gameplayStop());
+    },
+
+    // Реклама. Любой сбой или недоступность — просто «не показано»: игра идёт дальше как без рекламы
+    ads: {
+        // Игра задаёт, что делать со звуком на время ролика (площадка требует остановить фоновый звук)
+        setHooks(hooks) {
+            adHooks = { ...adHooks, ...hooks };
+        },
+
+        // Есть ли вообще ролик за награду на этой площадке: по этому в итогах рисуется кнопка
+        get supportsRewarded() {
+            return Boolean(safe(() => adapter.ads && adapter.ads.supportsRewarded, false));
+        },
+
+        // Ролик за награду по кнопке игрока. true — досмотрел до конца, награду выдавать можно
+        async rewarded() {
+            if (adBusy || !this.supportsRewarded) return false;
+            adBusy = true;
+            try {
+                if (!(await adapter.ads.canShowRewarded())) return false;
+                adHooks.start();
+                return Boolean(await adapter.ads.showRewarded());
+            } catch (e) {
+                return false;
+            } finally {
+                adHooks.end();
+                adBusy = false;
+            }
+        },
+
+        // Ролик между уровнями. Не показываем рано в сессии и слишком часто; true — реклама была
+        async interstitial() {
+            const now = Date.now();
+            const a = adapter.ads;
+            if (adBusy || !a || !a.supportsInterstitial) return false;
+            if (now - sessionStart < FIRST_AD_AFTER * 1000) return false;
+            if (lastInterstitial && now - lastInterstitial < AD_GAP * 1000) return false;
+            adBusy = true;
+            try {
+                if (!(await a.canShowInterstitial())) return false;
+                adHooks.start();
+                const shown = Boolean(await a.showInterstitial());
+                if (shown) lastInterstitial = Date.now();
+                return shown;
+            } catch (e) {
+                return false;
+            } finally {
+                adHooks.end();
+                adBusy = false;
+            }
+        }
     },
 
     // Площадка просит выключить звук (приоритетнее кнопки звука в игре)

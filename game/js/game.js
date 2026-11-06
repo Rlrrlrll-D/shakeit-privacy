@@ -26,6 +26,11 @@ const sound = new SoundEngine(FEEDBACK);
 // Портал может попросить выключить звук — это приоритетнее выбора игрока
 sound.setMuted(loadSetting('muted', false) || platform.muted);
 platform.onMuteChange((muted) => sound.setMuted(muted || loadSetting('muted', false)));
+// Реклама: на время ролика звук игры выключается (требование площадок), после — как выбрал игрок
+platform.ads.setHooks({
+    start: () => sound.setMuted(true),
+    end: () => sound.setMuted(loadSetting('muted', false) || platform.muted)
+});
 sound.loadSamples(FEEDBACK.files);
 const haptics = new Haptics(FEEDBACK);
 // Всё, что живёт дольше сцен (переживает переходы между картой и уровнями)

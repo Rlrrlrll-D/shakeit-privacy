@@ -2,15 +2,14 @@
 //
 // Монеты платят за умение: за новые звёзды и за побитые рекорды, плюс задание дня — повод заходить
 // каждый день. Косметика ни на что в игре не влияет (game/cosmetics.js), поэтому рекорды сравнимы.
-// Награда за заезд может быть удвоена роликом рекламы (REWARD_MULTIPLIER) — крючок под монетизацию
-// на площадках; пока рекламы нет, кнопка не показывается (ADS_READY).
+// Награда за заезд может быть удвоена роликом рекламы (REWARD_MULTIPLIER): кнопка в итогах заезда
+// показывается, только если площадка умеет ролики за награду (platform.ads, platform/platform.js).
 import { COSMETICS, DEFAULT_EQUIP, SLOTS, item } from './cosmetics.js';
 import { loadSetting, saveSetting } from '../util/Settings.js';
 import { readStored, writeStored } from '../util/storage.js';
 
 const KEY = 'shakeit.economy.v1';
 
-export const ADS_READY = false;        // Переключится, когда будет подключён показ рекламы
 export const REWARD_MULTIPLIER = 2;    // Во столько раз ролик увеличивает награду за заезд
 
 // Монеты за заезд: за каждую новую звезду, за первое прохождение и за побитые рекорды

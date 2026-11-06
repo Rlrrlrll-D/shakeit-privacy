@@ -63,6 +63,32 @@ export function createPikabu(PkbSDK) {
         gameplayStart() {},
         gameplayStop() {},
 
+        // Реклама SDK (https://games.pikabu.ru/sdk/docs/sdk/ads): fullscreen — между уровнями (площадка сама держит
+        // паузу не меньше 120 с), rewarded — по нажатию игрока, награда только если show() вернул reward.
+        // Перед каждым показом — canShow(): формат может быть недоступен (блокировщик, частота, занят интерфейс)
+        ads: {
+            get supportsRewarded() {
+                return Boolean(sdk && sdk.ads.rewarded.isSupported);
+            },
+            get supportsInterstitial() {
+                return Boolean(sdk && sdk.ads.fullscreen.isSupported);
+            },
+            async canShowRewarded() {
+                return sdk.ads.rewarded.canShow();
+            },
+            async canShowInterstitial() {
+                return sdk.ads.fullscreen.canShow();
+            },
+            async showRewarded() {
+                const result = await sdk.ads.rewarded.show();
+                return Boolean(result.rendered && result.reward);
+            },
+            async showInterstitial() {
+                const result = await sdk.ads.fullscreen.show();
+                return Boolean(result.rendered);
+            }
+        },
+
         get muted() {
             return false;      // Площадка звуком не управляет
         },

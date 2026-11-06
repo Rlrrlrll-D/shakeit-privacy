@@ -6,6 +6,8 @@
 import { useStorageBackend } from '../util/storage.js';
 import { createCrazyGames } from './crazygames.js';
 import { createPikabu, waitForPikabu } from './pikabu.js';
+import { createAdMob } from './admob.js';
+import { createPlaygama } from './playgama.js';
 
 const none = {
     name: 'none',
@@ -27,6 +29,12 @@ async function pick() {
         const sdk = await waitForPikabu();
         return sdk ? createPikabu(sdk) : none;
     }
+    // Playgama: Bridge SDK подключён скриптом в <head>, он уже на странице
+    if (portal === 'playgama') return window.bridge ? createPlaygama(window.bridge) : none;
+    // Android-приложение: реклама AdMob через плагин Capacitor
+    const cap = window.Capacitor;
+    const admob = cap && cap.isNativePlatform && cap.isNativePlatform() && cap.Plugins && cap.Plugins.AdMob;
+    if (admob) return createAdMob(admob);
     const cg = window.CrazyGames && window.CrazyGames.SDK;
     // На чужом домене SDK CrazyGames выбрасывает ошибку на любой вызов (environment 'disabled')
     if (cg && cg.environment !== 'disabled') return createCrazyGames(cg);
@@ -129,8 +137,11 @@ export const platform = {
             const now = Date.now();
             const a = adapter.ads;
             if (adBusy || !a || !a.supportsInterstitial) return false;
-            if (now - sessionStart < FIRST_AD_AFTER * 1000) return false;
-            if (lastInterstitial && now - lastInterstitial < AD_GAP * 1000) return false;
+            // Playgama запрещает свои таймеры: частоту роликов решает её Bridge
+            if (adapter.ownLimits !== false) {
+                if (now - sessionStart < FIRST_AD_AFTER * 1000) return false;
+                if (lastInterstitial && now - lastInterstitial < AD_GAP * 1000) return false;
+            }
             adBusy = true;
             try {
                 if (!(await a.canShowInterstitial())) return false;

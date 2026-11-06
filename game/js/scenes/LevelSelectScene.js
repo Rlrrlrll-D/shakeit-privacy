@@ -39,6 +39,7 @@ export class LevelSelectScene extends Phaser.Scene {
     }
 
     create() {
+        this.sfx.music('musicMap');
         const progress = this.progress;
         const cx = GAME_WIDTH / 2;
         const height = this.scale.height;

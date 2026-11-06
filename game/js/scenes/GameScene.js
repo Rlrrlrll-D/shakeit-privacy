@@ -75,6 +75,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     create() {
+        this.sfx.music('musicGame');
         this.level = LEVELS[this.levelIndex];
         this.params = levelParams(this.level);
 
@@ -116,6 +117,7 @@ export class GameScene extends Phaser.Scene {
         this.shownRemaining = -1;
         this.nextMilestone = 0;
         this.leaving = false;
+        this.leaveBusy = false;
         this.adClaimed = false;
         this.combo = new Combo(COMBO);
         // Ритм заводится в момент падения капли — см. onDropImpact
@@ -1163,8 +1165,9 @@ export class GameScene extends Phaser.Scene {
         const buttonsY = top + height - 70;
         const hasNext = isWin && this.levelIndex + 1 < LEVELS.length;
         const leave = (scene, data) => async () => {
-            if (this.leaving) return;
-            this.leaving = true;
+            // Свой флаг, не this.leaving: goToScene сам выходит при this.leaving, и переход после ролика не случался
+            if (this.leaveBusy) return;
+            this.leaveBusy = true;
             await platform.ads.interstitial();
             goToScene(this, scene, data);
         };

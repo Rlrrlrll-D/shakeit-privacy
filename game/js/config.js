@@ -106,7 +106,9 @@ export const FEEDBACK = {
     impactRef: 15,           // Удар этой силы сверх минимума — максимальный всплеск и вибрация
     splashMinInterval: 0.05,
     // Записанные звуки (CC0, freesound.org). Нет файла — работает синтез
-    files: { drop: 'sounds/drop.wav', shake: 'sounds/shake.mp3' }, // drop — WAV: у MP3 в начале ~25 мс тишины
+    files: { drop: 'sounds/drop.wav', shake: 'sounds/shake.mp3', musicMap: 'sounds/music-map.mp3', musicGame: 'sounds/music-game.mp3' }, // drop — WAV: у MP3 в начале ~25 мс тишины
+    musicVolume: 0.32,       // Фоновая музыка (общая громкость делится с master); тише жидкости и щелчков
+    musicFade: 1.2,          // с: перекрёстное затухание при смене трека
     dropVolume: 0.9,
     tickVolume: 1.2,         // Щелчок метронома (свой канал мимо компрессора)
     duckLevel: 0.3,          // Громкость жидкости, пока идёт ритм — чтобы щелчки было слышно
@@ -341,4 +343,15 @@ export const SHAKE = {
     debugFrequency: 5,
     debugAmplitude: 25,
     debugSampleStep: 0.004
+};
+
+// Реклама в Android-приложении (platform/admob.js). Настоящие идентификаторы AdMob (аккаунт владельца,
+// выплаты — на израильский счёт). Новые блоки начинают показывать рекламу не сразу, до часа.
+// testing: true — тестовые ролики Google (ничего не оплачивают): включать на время разработки, потому что
+// кликать по настоящей рекламе на своём телефоне нельзя — AdMob считает это недопустимым трафиком и блокирует аккаунт
+export const ADMOB = {
+    testing: false,
+    appId: 'ca-app-pub-4358554119333754~1827982676',
+    rewarded: 'ca-app-pub-4358554119333754/9304962104',
+    interstitial: 'ca-app-pub-4358554119333754/4102792225'
 };

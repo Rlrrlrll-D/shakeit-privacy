@@ -63,9 +63,19 @@ window.__game = game; // Отладка с компьютера через DevTo
 // Пропорции экрана могут смениться после старта (скрылись системные панели, окно браузера изменили) —
 // пересчитываем высоту поля и перезапускаем уровень с новой раскладкой
 let resizeTimer = 0;
+// Рамка игры на площадке меняет размер и прячется на время рекламы: Phaser пересчитывает координаты касаний
+// по границам холста, и устаревшие границы после ролика сдвигают нажатия мимо кнопок. Обновляем их на любое
+// событие, после которого рамка могла измениться, и перед каждым касанием
+const refreshBounds = () => { try { game.scale.updateBounds(); } catch (e) { /* игра ещё не поднялась */ } };
+for (const type of ['pointerdown', 'touchstart', 'mousedown']) window.addEventListener(type, refreshBounds, true);
+window.addEventListener('focus', refreshBounds);
+document.addEventListener('visibilitychange', refreshBounds);
 window.addEventListener('resize', () => {
+    refreshBounds();
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
+        // Рамка схлопнулась или скрыта (ролик, свёрнутая вкладка): перезапускать уровень по таким размерам нельзя
+        if (document.hidden || window.innerWidth < 200 || window.innerHeight < 200) return;
         const height = gameHeightFor(window.innerWidth, window.innerHeight);
         if (Math.abs(height - game.scale.height) < 4) return;
         game.scale.setGameSize(GAME_WIDTH, height);

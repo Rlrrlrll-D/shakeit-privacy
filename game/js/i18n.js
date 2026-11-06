@@ -299,6 +299,8 @@ function buildLocale() {
 
 function platformLocale() {
     try {
+        // Playgama: язык игрока на площадке (Bridge уже инициализирован до загрузки игры)
+        if (window.__SHAKEIT_BUILD && window.__SHAKEIT_BUILD.portal === 'playgama' && window.bridge) return window.bridge.platform.language;
         const sdk = window.CrazyGames && window.CrazyGames.SDK;
         if (sdk && sdk.environment !== 'disabled') return sdk.user.systemInfo.locale;
     } catch (e) {

@@ -5,6 +5,7 @@
 // Что под ними лежит на самом деле — написано в config.js рядом с каждой величиной.
 // Кнопка «ЗАБРАТЬ» кладёт подобранный набор в хранилище (ключ shakeit.lab.preset), откуда его
 // переносят в LIQUID_STATES. Проверять набор — приёмочным тестом tools/liquid_check.mjs.
+import { writeStored } from '../util/storage.js';
 import { LEVEL, LIQUID, LIQUID_RENDER, LIQUID_STATES, COLORS, DRAW_SMOOTH, computeLayout } from '../config.js';
 import { LiquidModel } from '../physics/LiquidModel.js';
 import { LiquidPipeline } from '../render/LiquidPipeline.js';
@@ -216,7 +217,7 @@ export class LiquidLabScene extends Phaser.Scene {
                     liquid: { viscosity: this.tune.viscosity, xsph: this.tune.xsph, surface: this.tune.surface, cfm: this.tune.cfm, tolerance: this.tune.tolerance, damping: this.tune.damping, inertiaGain: this.tune.inertiaGain },
                     look: { body: this.look.body, absorb: this.look.absorb, spec: this.look.spec, refract: this.look.refract, blobScale: this.look.blobScale }
                 };
-                try { localStorage.setItem(PRESET_KEY, JSON.stringify(picked)); } catch (e) { /* приватный режим */ }
+                writeStored(PRESET_KEY, JSON.stringify(picked));
                 this.hint.setText('набор сохранён — заберу его из хранилища');
             }
         });

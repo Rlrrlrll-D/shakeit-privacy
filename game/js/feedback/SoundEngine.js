@@ -35,6 +35,13 @@ export class SoundEngine {
         // Звук жидкости — через свою громкость, её прибирает ритм
         this.liquidBus = ctx.createGain();
         this.liquidBus.connect(this.master);
+        // Музыка: идёт через общий master (кнопка звука, тишина площадки и ролики глушат её вместе со всем),
+        // но мимо компрессора жидкости; своя громкость, чтобы фон не перекрывал всплески
+        this.musicBus = ctx.createGain();
+        this.musicBus.gain.value = params.musicVolume;
+        this.musicBus.connect(this.master);
+        this.music_ = null;       // { key, src, gain } — играющий трек
+        this.musicWanted = null;  // ключ трека, который просили, пока файл ещё не загрузился
         // Метроном: щелчок короткий и сам не перегрузит выход
         this.tickBus = ctx.createGain();
         this.tickBus.gain.value = params.volume;
@@ -73,10 +80,42 @@ export class SoundEngine {
                 const buffer = await this.ctx.decodeAudioData(await response.arrayBuffer());
                 this.samples[key] = buffer;
                 if (key === 'shake') this.shakeHits = findHits(buffer, this.p);
+                if (key === this.musicWanted) this.music(key);   // Трек просили раньше, чем он загрузился
             } catch (e) {
                 // Нет файла или формат не поддержан — работаем на синтезе
             }
         }));
+    }
+
+    // Фоновая музыка: key — имя записи в samples; трек зациклен без щелчка (буфер Web Audio), смена —
+    // перекрёстным затуханием. null — тишина. Тот же трек второй раз не перезапускается
+    music(key) {
+        if (!this.ctx) return;
+        this.musicWanted = key;
+        if (this.music_ && this.music_.key === key) return;
+        const buffer = key && this.samples[key];
+        if (key && !buffer) return;   // Файл ещё грузится: стартует из loadSamples
+        const ctx = this.ctx;
+        const now = ctx.currentTime;
+        const fade = this.p.musicFade;
+        const old = this.music_;
+        if (old) {
+            old.gain.gain.cancelScheduledValues(now);
+            old.gain.gain.setValueAtTime(old.gain.gain.value, now);
+            old.gain.gain.linearRampToValueAtTime(0, now + fade);
+            old.src.stop(now + fade + 0.05);
+        }
+        this.music_ = null;
+        if (!buffer) return;
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.loop = true;
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(1, now + fade);
+        src.connect(gain).connect(this.musicBus);
+        src.start(now);
+        this.music_ = { key, src, gain };
     }
 
     // Браузер может держать звук на паузе до первого касания — вызывается по жесту пользователя

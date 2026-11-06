@@ -1,127 +1,109 @@
-// Гарнир на ободке стакана — косметика из магазина (game/cosmetics.js). Рисуется графикой поверх
-// стекла: соломинка, долька, вишенка, зонтик, мята, сахарная кайма. Ни на что в игре не влияет.
+// Гарнир на стакане — косметика из магазина (game/cosmetics.js): соломинка, долька, вишенка, зонтик,
+// мята, сахарная кайма. Ни на что в игре не влияет.
 //
-// Привязка к стакану: ободок — верх внутренности, его полуширина известна и у фигурного стакана
-// (physics/GlassShape.js), и у прямоугольного. Над ободком гарнир поднимается не выше RISE —
-// иначе он залезает в шапку уровня.
+// Это картинки, отрисованные в Blender (tools/blender_garnish.py) той же камерой и тем же светом,
+// что и стаканы. Раньше гарнир рисовался плоскими заливками Graphics — рядом со стеклом, которое
+// само рендер с бликами и преломлением, он читался наклейкой поверх экрана, а не предметом в кадре.
+//
+// Масштаб — настоящий. Стакан в игре всегда занимает одну ширину поля (640 px на чашу ~90 мм),
+// отсюда 7 px поля в миллиметре, и размеры в FRAMES уже посчитаны в этих пикселях: лайм Ø44 мм,
+// вишня Ø19 на шпажке 100 мм, зонтик Ø62, соломинка Ø7×190, лист мяты 34, кайма 4 мм. Поэтому
+// гарнир ОДИНАКОВ на всех бокалах — лайм не растёт оттого, что его положили на широкий бокал.
+// От бокала зависит только то, куда он садится.
+//
+// Посадка. У каждой картинки есть якорь — точка предмета, которая обязана лечь на кромку (срез
+// дольки, шпажка, место, где соломинка входит в стакан). Якорь ставится в (cx + at·half, top),
+// остальное встаёт от него само. Над кромкой предметам нужен воздух — его даёт RIM_HEADROOM
+// в config.js: стакан опущен, и строка «ТРЯСКА» гарниру больше не мешает.
+import { RIM_HEADROOM } from '../config.js';
 
-// rim: { cx, top, half } — центр, высота ободка и его полуширина в px
-const RISE = 46; // px: насколько гарнир торчит над ободком
+// Кадры и якоря — те же числа, что в tools/blender_garnish.py (ITEMS). Размер кадра в пикселях поля,
+// якорь — долей кадра, at — где по ободку стоит якорь (доля полуширины)
+// from: 'bottom' — предмет стоит на дне стакана, а не висит на кромке; его длина подгоняется под
+// глубину этого бокала (бармен и берёт соломинку по стакану), но не длиннее настоящей
+export const FRAMES = {
+    slice:    { w: 340, h: 200, ax: 0.50, ay: 0.08, at: 0.44 },
+    cherry:   { w: 760, h: 300, ax: 0.50, ay: 0.17, at: 0.14 },
+    // at подобран так, чтобы купол (Ø62 мм ≈ 434 px) целиком лежал над стаканом: центр купола
+    // не правее half − 217 даже у самого узкого бокала, иначе он уезжает за стенку и за экран
+    umbrella: { w: 520, h: 820, ax: 0.40, ay: 0.06, at: 0.12 },
+    mint:     { w: 380, h: 420, ax: 0.44, ay: 0.72, at: 0.40 },
+    straw:    { w: 230, h: 1100, ax: 0.114, ay: 0.973, at: -0.22, from: 'bottom', span: 0.946 },
+    rim:      { w: 240, h: 70, ax: 0.50, ay: 0.50, at: 0 }
+};
 
-export function drawGarnish(scene, id, rim, depth) {
-    const draw = ART[id];
-    if (!draw) return null;
-    const g = scene.add.graphics().setDepth(depth);
-    draw(g, rim);
-    return g;
+export const GARNISH_IDS = Object.keys(FRAMES);
+
+export function garnishKey(id) {
+    return `garnish-${id}`;
 }
 
-const ART = {
-    // Соломинка: наклонная полосатая трубочка из стакана
-    straw(g, { cx, top, half }) {
-        const x0 = cx + half * 0.42;
-        const y0 = top + 60;
-        const x1 = cx + half * 0.92;
-        const y1 = top - RISE;
-        const w = 13;
-        const dx = x1 - x0;
-        const dy = y1 - y0;
-        const len = Math.hypot(dx, dy);
-        const nx = -dy / len * w / 2;
-        const ny = dx / len * w / 2;
-        g.fillStyle(0xff4d6d, 1);
-        g.fillPoints([
-            { x: x0 - nx, y: y0 - ny }, { x: x1 - nx, y: y1 - ny },
-            { x: x1 + nx, y: y1 + ny }, { x: x0 + nx, y: y0 + ny }
-        ], true);
-        // Полоски поперёк
-        g.fillStyle(0xfff5f7, 1);
-        for (let t = 0.08; t < 1; t += 0.17) {
-            const px = x0 + dx * t;
-            const py = y0 + dy * t;
-            const sx = dx / len * 5;
-            const sy = dy / len * 5;
-            g.fillPoints([
-                { x: px - nx, y: py - ny }, { x: px + sx - nx, y: py + sy - ny },
-                { x: px + sx + nx, y: py + sy + ny }, { x: px + nx, y: py + ny }
-            ], true);
-        }
-    },
+export function garnishFile(id) {
+    return `images/garnish/${id}.webp`;
+}
 
-    // Долька лайма на ободке: полукруг с дольками и коркой
-    slice(g, { cx, top, half }) {
-        const x = cx + half * 0.72;
-        const y = top + 4;
-        const r = 46;
-        g.fillStyle(0x9be15d, 1);
-        g.slice(x, y, r, Math.PI, 0, false);
-        g.fillPath();
-        g.fillStyle(0xd7f9a9, 1);
-        g.slice(x, y, r - 7, Math.PI, 0, false);
-        g.fillPath();
-        g.lineStyle(3, 0x7ac74f, 1);
-        for (let k = 1; k < 5; k++) {
-            const a = Math.PI + (Math.PI * k) / 5;
-            g.lineBetween(x, y, x + Math.cos(a) * (r - 9), y + Math.sin(a) * (r - 9));
-        }
-    },
+// rim: { cx, top, half } — центр кромки, её высота и полуширина (px поля).
+// Возвращает контейнер (или null, если у предмета нет картинки)
+// Обрезка по окну view = {x0, y0, x1, y1} (те же координаты, что у rim): показывает только часть
+// предмета. Нужна плитке магазина — предмет настоящего размера в неё целиком не лезет, а в
+// уменьшенном виде соломинка превращалась в нитку
+function cropTo(img, left, top, w, h, view) {
+    if (!view) return true;
+    const x0 = Math.max(view.x0, left), x1 = Math.min(view.x1, left + w);
+    const y0 = Math.max(view.y0, top), y1 = Math.min(view.y1, top + h);
+    if (x1 <= x0 || y1 <= y0) return false;
+    img.setCrop(((x0 - left) / w) * img.width, ((y0 - top) / h) * img.height,
+        ((x1 - x0) / w) * img.width, ((y1 - y0) / h) * img.height);
+    return true;
+}
 
-    // Вишенка на шпажке
-    cherry(g, { cx, top, half }) {
-        const x = cx + half * 0.55;
-        const y = top - RISE + 10;
-        g.lineStyle(5, 0xe8d8b0, 1);
-        g.lineBetween(x - 18, y + 92, x + 10, y - 26);
-        g.lineStyle(4, 0x4caf50, 1);
-        g.beginPath();
-        g.arc(x + 4, y + 16, 26, -2.4, -0.9);
-        g.strokePath();
-        g.fillStyle(0xd90429, 1);
-        g.fillCircle(x, y + 30, 20);
-        g.fillStyle(0xff6b8a, 0.8);
-        g.fillCircle(x - 7, y + 23, 6);
-    },
-
-    // Бумажный зонтик: купол из цветных секторов на палочке
-    umbrella(g, { cx, top, half }) {
-        const x = cx + half * 0.5;
-        const y = top - RISE;
-        const r = 44;
-        g.lineStyle(5, 0xe8d8b0, 1);
-        g.lineBetween(x, y, x - 14, y + 150);
-        const colors = [0xff4d6d, 0xffd23f, 0x4cc9f0, 0x9be15d, 0xff8fab, 0xb388ff];
-        for (let k = 0; k < 6; k++) {
-            g.fillStyle(colors[k], 1);
-            g.slice(x, y, r, Math.PI + (Math.PI * k) / 6, Math.PI + (Math.PI * (k + 1)) / 6, false);
-            g.fillPath();
+export function drawGarnish(scene, id, rim, depth, scale = 1, view = null) {
+    const f = FRAMES[id];
+    if (!f || !scene.textures.exists(garnishKey(id))) return null;
+    const box = scene.add.container(0, 0).setDepth(depth);
+    if (id === 'rim') {
+        // Кайма — единственный предмет во всю кромку: кусок полосы растягивается по ширине.
+        // Высота остаётся настоящей (4 мм), растягивается только длина
+        const w = f.w * scale;
+        const count = Math.ceil((rim.half * 2) / w) + 1;
+        const total = count * w;
+        for (let k = 0; k < count; k++) {
+            const img = scene.add.image(rim.cx - total / 2 + (k + 0.5) * w, rim.top, garnishKey(id));
+            img.setDisplaySize(w, f.h * scale);
+            if (cropTo(img, img.x - w / 2, img.y - (f.h * scale) / 2, w, f.h * scale, view)) box.add(img);
+            else img.destroy();
         }
-        g.fillStyle(0xe8d8b0, 1);
-        g.fillCircle(x, y, 7);
-    },
-
-    // Веточка мяты за ободком
-    mint(g, { cx, top, half }) {
-        const x = cx + half * 0.58;
-        const y = top - 4;
-        g.lineStyle(4, 0x4caf50, 1);
-        g.lineBetween(x, y + 40, x + 6, y - 64);
-        for (let k = 0; k < 3; k++) {
-            const ly = y - 6 - k * 20;
-            const dir = k % 2 ? 1 : -1;
-            g.fillStyle(k % 2 ? 0x7ed957 : 0x4caf50, 1);
-            g.fillEllipse(x + dir * 24, ly, 46, 26);
+        // Геометрическая маска считается в координатах мира, а образец в магазине стоит в
+        // сдвинутом и ужатом контейнере — там маска вырезала всё. Окно view уже обрезает как надо
+        if (!view) {
+            const mask = scene.make.graphics();
+            mask.fillStyle(0xffffff, 1);
+            mask.fillRect(rim.cx - rim.half, rim.top - f.h * scale, rim.half * 2, f.h * scale * 2);
+            box.setMask(mask.createGeometryMask());
         }
-    },
-
-    // Сахарная кайма: шапочка кристаллов по всему ободку
-    rim(g, { cx, top, half }) {
-        g.fillStyle(0xffffff, 0.9);
-        g.fillRoundedRect(cx - half - 6, top - 12, half * 2 + 12, 20, 10);
-        g.fillStyle(0xffffff, 1);
-        for (let k = 0; k < 40; k++) {
-            const px = cx - half + ((k * 83) % (half * 2));
-            const py = top - 14 + ((k * 37) % 18);
-            g.fillCircle(px, py, 2 + (k % 3));
-        }
+        return box;
     }
-};
+    let k = scale;
+    if (f.from === 'bottom') {
+        // Упирается в дно и не пробивает его: длину подгоняем под глубину бокала плюс воздух
+        // над кромкой. Длиннее настоящей не делаем — только короче
+        const depth = (rim.bottom ?? rim.top) - rim.top;
+        // Над кромкой — не больше 0.95 от запаса: выше начинается строка «ТРЯСКА»
+        const room = depth + RIM_HEADROOM * 0.95;
+        k = Math.min(scale, room / (f.h * f.span));
+    }
+    const img = scene.add.image(0, 0, garnishKey(id));
+    img.setDisplaySize(f.w * k, f.h * k);
+    // Origin — это и есть якорь: точка картинки, которая встаёт на кромку (или на дно)
+    img.setOrigin(f.ax, f.ay);
+    const y = f.from === 'bottom' ? (rim.bottom ?? rim.top) : rim.top;
+    img.setPosition(rim.cx + rim.half * f.at, y);
+    if (cropTo(img, img.x - f.ax * f.w * k, img.y - f.ay * f.h * k, f.w * k, f.h * k, view)) box.add(img);
+    else img.destroy();
+    return box;
+}
+
+// Сколько воздуха над кромкой у этой раскладки — чтобы сцена не считала сама
+export function rimHeadroom() {
+    return RIM_HEADROOM;
+}

@@ -1,4 +1,4 @@
-import { LEVEL, LIQUID, LIQUID_RENDER, LIQUID_STATES } from '../config.js';
+import { LEVEL, LIQUID, LIQUID_RENDER, LIQUID_STATES, SURFACE_WAVES } from '../config.js';
 
 // Уровни-рецепты: основа + капля → цвет результата.
 // Сложность — сколько встряхиваний нужно (strokes: полноценных, силой 1; обычное сильное ≈ 0.8)
@@ -127,6 +127,11 @@ export function levelStroke(level) {
 export function levelLook(level) {
     const state = LIQUID_STATES[level.state] || LIQUID_STATES.juice;
     return { ...LIQUID_RENDER, ...state.look, ...(level.look || {}) };
+}
+// Волна по поверхности (render/SurfaceWaves.js): вода качается дольше, глицерин почти не качается
+export function levelWaves(level) {
+    const state = LIQUID_STATES[level.state] || LIQUID_STATES.juice;
+    return { ...SURFACE_WAVES, ...state.waves, ...(level.waves || {}) };
 }
 
 // Параметры уровня для модели жидкости: общие значения LEVEL + особенности рецепта

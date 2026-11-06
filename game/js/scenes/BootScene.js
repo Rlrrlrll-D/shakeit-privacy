@@ -1,4 +1,5 @@
 import { ICONS } from '../game/levels.js';
+import { GARNISH_IDS, garnishKey, garnishFile } from '../ui/garnish.js';
 import { FONT_FAMILY } from '../ui/widgets.js';
 import { platform } from '../platform/platform.js';
 
@@ -10,6 +11,7 @@ export class BootScene extends Phaser.Scene {
 
     preload() {
         for (const key of ICONS) this.load.image(iconKey(key), `icons/${key}.png`);
+        for (const id of GARNISH_IDS) this.load.image(garnishKey(id), garnishFile(id));
         this.load.image('logo', 'images/logo.png');
     }
 

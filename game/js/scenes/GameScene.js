@@ -2,8 +2,9 @@ import { LIQUID, COMBO, COLORS, RHYTHM, DRAW_SMOOTH, computeLayout } from '../co
 import { LiquidModel } from '../physics/LiquidModel.js';
 import { LiquidPipeline } from '../render/LiquidPipeline.js';
 import { createDensityBlob, buildDensityLut, DrawPositions } from '../render/metaballs.js';
+import { SurfaceWaves } from '../render/SurfaceWaves.js';
 import { WallMirrors } from '../render/wallMirrors.js';
-import { LEVELS, CHAPTERS, levelParams, levelLiquid, levelLook, starsFor, STAR_ACCURACY, glassFor, levelStroke, levelBeat } from '../game/levels.js';
+import { LEVELS, CHAPTERS, levelParams, levelLiquid, levelLook, levelWaves, starsFor, STAR_ACCURACY, glassFor, levelStroke, levelBeat } from '../game/levels.js';
 import { drawGlass, glassShapeFor, glassImages } from '../ui/glass.js';
 import { drawGarnish } from '../ui/garnish.js';
 import { Combo } from '../game/Combo.js';
@@ -34,6 +35,8 @@ const State = Object.freeze({
 });
 
 const UI_DEPTH = 10;
+// Порядок слоёв стакана: заднее стекло 0, гарнир 1, жидкость 2, переднее стекло 3
+const LIQUID_DEPTH = 2;
 const INTRO_ICON = 116;  // Заставка рецепта: размер иконок...
 const INTRO_STEP = 74;   // ...шаг между иконками и знаками (знаки почти вплотную к иконкам)...
 const INTRO_MARGIN = 44; // Заставка: поле между надписью и стенкой стакана
@@ -232,7 +235,7 @@ export class GameScene extends Phaser.Scene {
 
     // Все частицы жидкости — в одном слое; в режиме метаболов слой проходит через шейдер жидкости
     createLiquidLayer() {
-        this.liquidLayer = this.add.layer();
+        this.liquidLayer = this.add.layer().setDepth(LIQUID_DEPTH);
         if (!this.metaballs) return;
 
         // Чистое сложение (ONE, ONE): плотности частиц суммируются в буфере. Режим регистрируется
@@ -285,10 +288,14 @@ export class GameScene extends Phaser.Scene {
     // Стакан уровня: стекло — под жидкостью, стенки и блики — поверх (ui/glass.js); сверху — гарнир
     drawGlass() {
         this.glassParts = drawGlass(this, this.glass, this.glassSkin, this.shape, this.look2.glass.tint);
+        // Мерки кромки для гарнира (ui/garnish.js): где она, какой ширины. Размер предмета от бокала
+        // не зависит — он в настоящих миллиметрах
         const rim = this.shape
-            ? { cx: this.shape.cx, top: this.shape.top, half: this.shape.halfWidthAt(this.shape.top + 2) }
-            : { cx: this.glass.x + this.glass.width / 2, top: this.glass.y, half: this.glass.width / 2 };
-        drawGarnish(this, this.look2.garnish.id, rim, 4);
+            ? { cx: this.shape.cx, top: this.shape.top, half: this.shape.halfWidthAt(this.shape.top + 2), bottom: this.shape.bottom }
+            : { cx: this.glass.x + this.glass.width / 2, top: this.glass.y, half: this.glass.width / 2, bottom: this.glass.y + this.glass.height };
+        // Глубина 1 — между задним стеклом (0) и жидкостью (LIQUID_DEPTH): гарнир стоит В стакане,
+        // жидкость перехлёстывает его при тряске, а передним стеклом он накрыт, как и положено
+        this.garnish = drawGarnish(this, this.look2.garnish.id, rim, 1);
     }
 
     // Перегородки — поверх жидкости: прячут шов, где пятна частиц по разные стороны сливаются.
@@ -338,6 +345,9 @@ export class GameScene extends Phaser.Scene {
             this.sprites[i] = this.addLiquidSprite(x[i], y[i], this.colorLut[0]);
         }
         this.draw = new DrawPositions(count, DRAW_SMOOTH);
+        // Волна по поверхности (render/SurfaceWaves.js): только для картинки, физику не трогает
+        const waves = levelWaves(this.level);
+        this.waves = waves.on ? new SurfaceWaves(this.glass, this.shape, count, waves) : null;
 
         // Отражения ближних к стенкам частиц: без них поле плотности у стенки проседает
         // и нарисованная кромка жидкости загибается внутрь — у стекла появляется скругление.
@@ -914,8 +924,10 @@ export class GameScene extends Phaser.Scene {
         const { count } = liquid.sim;
         // Рисуем сглаженные по времени положения: дрожь стоячей жидкости не должна рябить кромкой
         this.draw.update(liquid.sim);
-        const x = this.draw.x;
-        const y = this.draw.y;
+        // ...и ведём верх массы волной мелкой воды — поверхность идёт единым фронтом, а не зерном частиц
+        const src = this.waves ? this.waves.update(this.draw, liquid.sim, this.lastDt || 1 / 60) : this.draw;
+        const x = src.x;
+        const y = src.y;
         const sprites = this.sprites;
         const tintStep = this.tintStep;
         const maxStep = COLORS.tintSteps - 1;
@@ -940,7 +952,7 @@ export class GameScene extends Phaser.Scene {
                 sprite.setTint(this.colorLut[step]);
             }
         }
-        if (this.mirrors) this.mirrors.update(this.draw, this.glass, this.shape, sprites, count);
+        if (this.mirrors) this.mirrors.update(src, this.glass, this.shape, sprites, count);
     }
 
     // Тексты перерисовываются только при смене значения — пересоздание текстуры текста дорогое

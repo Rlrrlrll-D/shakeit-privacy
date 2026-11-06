@@ -1,7 +1,7 @@
 import { GAME_WIDTH } from '../config.js';
 import { UI_COLORS, createButton, uiFont, softShadow, safeTop, fitWidth, hexColor } from '../ui/widgets.js';
 import { ensureFxTextures, ambientBackground, sparkle, goToScene } from '../ui/fx.js';
-import { drawGarnish } from '../ui/garnish.js';
+import { drawGarnish, FRAMES } from '../ui/garnish.js';
 import { COSMETICS, SLOTS } from '../game/cosmetics.js';
 import { t } from '../i18n.js';
 
@@ -11,6 +11,18 @@ const COLUMNS = 3;
 const TILE = 190;
 const GAP = 22;
 const HEADER = 190;
+// Окно образца гарнира: что из кромки стакана и предмета попадает в плитку (px поля при ободке
+// 600, кромка на y = 0). Подобрано по предмету, а не по стакану — на плитке видно именно его
+const PREVIEW_W = 160;
+const PREVIEW_H = 112;
+const PREVIEW_WINDOW = {
+    slice: [-70, -40, 330, 210],
+    cherry: [-150, -80, 250, 230],
+    umbrella: [-200, -60, 280, 400],
+    mint: [-60, -320, 340, 120],
+    straw: [-120, -210, 190, 200],
+    rim: [-110, -34, 110, 40]
+};
 
 export class ShopScene extends Phaser.Scene {
     constructor({ progress, economy, sfx, haptics }) {
@@ -171,14 +183,28 @@ export class ShopScene extends Phaser.Scene {
             g.strokeRoundedRect(-34, -52, 68, 104, { tl: 8, tr: 8, bl: 20, br: 20 });
             box.add(g);
         } else if (this.slot === 'garnish') {
-            const g = this.add.graphics();
-            g.fillStyle(0x2a2f4a, 1);
-            g.fillRoundedRect(-30, -8, 60, 72, { tl: 4, tr: 4, bl: 14, br: 14 });
-            box.add(g);
-            const art = drawGarnish(this, it.id, { cx: 0, top: -8, half: 30 }, 0);
-            if (art) {
-                art.setScale(0.62);
-                box.add(art);
+            // Образец — крупный план: окно в мерках игры вокруг самого предмета, по нему и обрезка,
+            // и масштаб. Целиком предмет настоящего размера в плитку не лезет, а в одном масштабе
+            // на всех соломинка была ниткой, а кайма — невидимой полоской
+            const half = 300;
+            const depth = 560;
+            const win = PREVIEW_WINDOW[it.id];
+            if (win) {
+                const [x0, y0, x1, y1] = win;
+                const k = Math.min(PREVIEW_W / (x1 - x0), PREVIEW_H / (y1 - y0));
+                const shelf = this.add.container(-((x0 + x1) / 2) * k, -((y0 + y1) / 2) * k).setScale(k);
+                const g = this.add.graphics();
+                // Кусок стакана в пределах окна: тело ниже кромки и сама кромка
+                const gx0 = Math.max(x0, -half), gx1 = Math.min(x1, half);
+                g.fillStyle(0x2a2f4a, 1);
+                g.fillRect(gx0, 0, gx1 - gx0, Math.max(0, Math.min(y1, depth)));
+                g.fillStyle(0x4a5578, 1);
+                g.fillRect(gx0, -8, gx1 - gx0, 16);
+                shelf.add(g);
+                const art = drawGarnish(this, it.id, { cx: 0, top: 0, half, bottom: depth }, 0, 1,
+                    { x0, y0, x1, y1 });
+                if (art) shelf.add(art);
+                box.add(shelf);
             }
         } else if (this.slot === 'scene') {
             const g = this.add.graphics();

@@ -118,9 +118,169 @@ void main() {
 }
 `;
 
+// Размытие поля по одной оси: пять выборок с линейной фильтрацией заменяют девять по Гауссу
+const blurShader = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+
+uniform sampler2D uMainSampler;
+uniform vec2 uStep;
+
+varying vec2 outTexCoord;
+
+void main() {
+    vec2 a = uStep * 1.3846153846;
+    vec2 b = uStep * 3.2307692308;
+    gl_FragColor = texture2D(uMainSampler, outTexCoord) * 0.2270270270
+        + (texture2D(uMainSampler, outTexCoord + a) + texture2D(uMainSampler, outTexCoord - a)) * 0.3162162162
+        + (texture2D(uMainSampler, outTexCoord + b) + texture2D(uMainSampler, outTexCoord - b)) * 0.0702702703;
+}
+`;
+
+// Сплошная масса с чётким контуром. Поле сглажено заранее (blurShader), поэтому его изолиния — ровная
+// кривая без бугорков отдельных частиц. Расстояние до контура считается в пикселях: значение поля
+// минус порог, делённое на крутизну. На нём и держится чёткость: край одной ширины по всей массе,
+// как бы ни был размазан перепад плотности, и линия поверхности постоянной толщины
+const surfaceShader = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+
+uniform sampler2D uMainSampler;
+uniform sampler2D uRaw;
+uniform sampler2D uBackdrop;
+uniform vec2 uTexel;
+uniform vec2 uPixel;
+uniform float uCell;
+uniform float uKeep;
+uniform vec3 uBase;
+uniform vec3 uTarget;
+uniform vec3 uColorA;
+uniform vec3 uColorB;
+uniform float uDual;
+uniform float uThreshold;
+uniform float uEdge;
+uniform float uBody;
+uniform float uFilm;
+uniform float uShell;
+uniform float uTilt;
+uniform float uAbsorb;
+uniform float uRefract;
+uniform float uSpec;
+uniform float uShine;
+uniform vec3 uLight;
+uniform float uLine;
+uniform float uLineAlpha;
+uniform float uLineTint;
+uniform float uLineLow;
+
+varying vec2 outTexCoord;
+
+void main() {
+    vec4 s = texture2D(uMainSampler, outTexCoord);
+    // Поле сглажено в буфере вчетверо меньше экрана, и тонкие плёнки в нём пропадают: размытие
+    // сохраняет среднее, но срезает пики у всего мельче своего радиуса. В сильной тряске масса
+    // как раз растягивается в плёнки — и они исчезали целыми кадрами. Поэтому берём максимум
+    // сглаженного и исходного поля: толстая масса идёт по сглаженному (ровный контур),
+    // тонкая держится исходным и никуда не девается
+    vec4 raw = texture2D(uRaw, outTexCoord);
+    float density = max(s.g, raw.g * uKeep);
+    if (density < uThreshold * 0.4) {
+        gl_FragColor = vec4(0.0);
+        return;
+    }
+    // Цвет берём из исходного буфера: сглаженный размазывает границу красок
+    s = raw.g > 0.0001 ? raw : s;
+
+    // Наклон поля на пиксель игры. Буфер перевёрнут по вертикали относительно экрана — у y меняем знак:
+    // дальше считаем в экранных осях (x вправо, y вниз), как задан и свет
+    vec2 d = uTexel;
+    vec2 grad = vec2(
+        texture2D(uMainSampler, outTexCoord + vec2(d.x, 0.0)).g - texture2D(uMainSampler, outTexCoord - vec2(d.x, 0.0)).g,
+        texture2D(uMainSampler, outTexCoord - vec2(0.0, d.y)).g - texture2D(uMainSampler, outTexCoord + vec2(0.0, d.y)).g
+    ) / (2.0 * uCell);
+    float steep = length(grad);
+    vec2 dir = steep > 0.00001 ? grad / steep : vec2(0.0);
+
+    // Расстояние до контура, px: внутри массы положительное. Крутизна снизу ограничена, иначе
+    // в ровной толще деление даёт бесконечность, а на плёнке — дрожащий край
+    float dist = (density - uThreshold) / max(steep, 0.0015);
+    float alpha = smoothstep(-uEdge, uEdge, dist);
+    if (alpha <= 0.0) {
+        gl_FragColor = vec4(0.0);
+        return;
+    }
+
+    float level = clamp(s.r / max(s.g, 0.001), 0.0, 1.0);
+    vec3 color = mix(uBase, uTarget, level);
+    if (uDual > 0.5) {
+        float a = level;
+        float b = clamp(s.b / max(s.g, 0.001), 0.0, 1.0);
+        color = uBase * (1.0 - a) * (1.0 - b) + uColorA * a * (1.0 - b) + uColorB * b * (1.0 - a) + uTarget * a * b;
+    }
+
+    // Краевая полоса: у самой поверхности сквозь жидкость виден фон, глубже цвет полный.
+    // В толще массы всё это выключено — там цвет ровно тот, что считает игра
+    float band = clamp(dist / max(uBody, 0.001), 0.0, 1.0);
+    float opacity = mix(uFilm, 1.0, band * (2.0 - band));
+    float shell = 1.0 - smoothstep(0.0, max(uShell, 0.001), dist);
+
+    vec2 bend = -dir * shell * uRefract * uPixel;
+    vec2 backUV = vec2(outTexCoord.x + bend.x, 1.0 - outTexCoord.y - bend.y);
+    vec3 behind = texture2D(uBackdrop, backUV).rgb;
+    vec3 tinted = behind * mix(vec3(1.0), color, uAbsorb);
+    color = mix(tinted, color, opacity);
+
+    vec3 normal = normalize(vec3(-dir * uTilt, 1.0));
+    color += uSpec * shell * pow(max(dot(normal, normalize(uLight)), 0.0), uShine);
+
+    // Линия поверхности: свет падает сверху, поэтому верх массы светлее низа
+    float facing = dot(-dir, normalize(uLight.xy));
+    float lit = mix(uLineLow, 1.0, smoothstep(-0.2, 0.6, facing));
+    float line = 1.0 - smoothstep(uLine - uEdge, uLine + uEdge, dist);
+    color = mix(color, mix(color, vec3(1.0), uLineTint), line * lit * uLineAlpha);
+
+    gl_FragColor = vec4(color * alpha, alpha);
+}
+`;
+
+const FIELD_SCALE = 0.25; // Поле сглаживается в уменьшенном буфере: четверть стороны — шестнадцатая часть пикселей
+
 export class LiquidPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeline {
     constructor(game) {
-        super({ game, name: 'LiquidPipeline', fragShader });
+        // Размер — явно: опцию scale рендер-таргет Phaser при создании игнорирует
+        const field = {
+            width: Math.max(1, Math.round(game.renderer.width * FIELD_SCALE)),
+            height: Math.max(1, Math.round(game.renderer.height * FIELD_SCALE))
+        };
+        super({
+            game,
+            name: 'LiquidPipeline',
+            renderTarget: [{ scale: 1 }, field, field],
+            shaders: [
+                { name: 'LiquidBlur', fragShader: blurShader },
+                { name: 'LiquidSurface', fragShader: surfaceShader },
+                { name: 'LiquidLegacy', fragShader }
+            ]
+        });
+        this.legacy = false;    // Старый вид — только на время сравнения вариантов
+        // Контур (surfaceShader): уровень поля, размытие, край и линия поверхности
+        this.soften = 1;        // Шаг размытия в клетках поля: больше — ровнее контур, но тоньше детали
+        this.contour = 0.14;    // Значение сглаженного поля, по которому проходит контур
+        this.aa = 1.1;          // Полуширина края, px
+        this.bodyPx = 0;        // Ширина полосы, в которой цвет набирает густоту, px
+        this.film = 1;          // Непрозрачность у самой кромки
+        this.shellPx = 26;      // Ширина полосы блика и преломления, px
+        this.line = 3;          // Толщина линии поверхности, px
+        this.lineAlpha = 0.85;
+        this.lineTint = 0.7;    // Насколько линия светлее самой жидкости
+        this.lineLow = 0.25;    // Яркость линии снизу массы относительно верха
+        this.keep = 0.92;       // Доля исходного поля, которой держатся тонкие плёнки и брызги
         this.base = [0, 0, 1];
         this.target = [0, 1, 0];
         this.threshold = 0.11;
@@ -174,6 +334,9 @@ export class LiquidPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeli
         if (look.spec !== undefined) this.spec = look.spec;
         if (look.shine !== undefined) this.shine = look.shine;
         if (look.light !== undefined) this.light = look.light;
+        for (const key of ['soften', 'contour', 'aa', 'bodyPx', 'film', 'shellPx', 'line', 'lineAlpha', 'lineTint', 'lineLow', 'keep']) {
+            if (look[key] !== undefined) this[key] = look[key];
+        }
         return this;
     }
 
@@ -186,6 +349,68 @@ export class LiquidPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeli
     }
 
     onDraw(renderTarget) {
+        if (this.legacy) {
+            this.drawLegacy(renderTarget);
+            return;
+        }
+        const gl = this.gl;
+        const [blur, surface] = this.shaders;
+        const [, a, b] = this.renderTargets;
+
+        // Сглаживание поля: по проходу на ось в уменьшенном буфере. Итог — в b.
+        // Проходов ровно два: каждый — это отдельный кадровый буфер, а их переключение на телефоне
+        // стоит дороже самих выборок (замер: четыре прохода добавляли 4 мс к девяностой доле кадра).
+        // Текущий кадровый буфер запоминаем и возвращаем сами: copySprite его переключает и за собой
+        // не убирает, а дальше bindAndDraw снимает буфер со стека рендерера — без возврата стек
+        // и настоящая привязка расходятся, и кадр уходит не туда (так же делает Blur у самого Phaser)
+        const currentFBO = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+        this.bind(blur);
+        this.set1i('uMainSampler', 0, blur);
+        gl.viewport(0, 0, a.width, a.height);
+        this.set2f('uStep', this.soften / a.width, 0, blur);
+        this.copySprite(renderTarget, a);
+        this.set2f('uStep', 0, this.soften / a.height, blur);
+        this.copySprite(a, b);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, currentFBO);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.viewport(0, 0, renderTarget.width, renderTarget.height);
+
+        this.bind(surface);
+        this.set3f('uBase', this.base[0], this.base[1], this.base[2], surface);
+        this.set3f('uTarget', this.target[0], this.target[1], this.target[2], surface);
+        this.set3f('uColorA', this.colorA[0], this.colorA[1], this.colorA[2], surface);
+        this.set3f('uColorB', this.colorB[0], this.colorB[1], this.colorB[2], surface);
+        this.set1f('uDual', this.dual ? 1 : 0, surface);
+        this.set1f('uThreshold', this.contour, surface);
+        this.set1f('uEdge', this.aa, surface);
+        this.set1f('uBody', this.bodyPx, surface);
+        this.set1f('uFilm', this.film, surface);
+        this.set1f('uShell', this.shellPx, surface);
+        this.set1f('uTilt', this.tilt, surface);
+        this.set1f('uAbsorb', this.absorb, surface);
+        this.set1f('uRefract', this.refract, surface);
+        this.set1f('uSpec', this.spec, surface);
+        this.set1f('uShine', this.shine, surface);
+        this.set3f('uLight', this.light[0], this.light[1], this.light[2], surface);
+        this.set1f('uLine', this.line, surface);
+        this.set1f('uLineAlpha', this.lineAlpha, surface);
+        this.set1f('uLineTint', this.lineTint, surface);
+        this.set1f('uLineLow', this.lineLow, surface);
+        this.set2f('uTexel', 1 / b.width, 1 / b.height, surface);
+        this.set2f('uPixel', 1 / renderTarget.width, 1 / renderTarget.height, surface);
+        this.set1f('uCell', renderTarget.width / b.width, surface);
+        this.set1f('uKeep', this.keep, surface);
+        this.set1i('uBackdrop', 1, surface);
+        if (this.backdrop) this.bindTexture(this.backdrop, 1);
+        // Несглаженное поле во второй слот: из него берётся цвет и спасаются тонкие плёнки
+        this.set1i('uRaw', 2, surface);
+        this.bindTexture(renderTarget.texture, 2);
+        this.renderer.setBlendMode(Phaser.BlendModes.NORMAL, true);
+        this.bindAndDraw(b, null, true, true, surface);
+    }
+
+    drawLegacy(renderTarget) {
+        this.bind(this.shaders[2]);
         this.set3f('uBase', this.base[0], this.base[1], this.base[2]);
         this.set3f('uTarget', this.target[0], this.target[1], this.target[2]);
         this.set1f('uThreshold', this.threshold);
@@ -215,7 +440,7 @@ export class LiquidPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeli
         // Частицы складывались в буфер режимом сложения (ONE, ONE) — готовую жидкость выводим обычным
         // наложением, иначе к её цвету прибавляется фон под ней (жидкость светлее и «светится»)
         this.renderer.setBlendMode(Phaser.BlendModes.NORMAL, true);
-        this.bindAndDraw(renderTarget);
+        this.bindAndDraw(renderTarget, null, true, true, this.shaders[2]);
     }
 }
 

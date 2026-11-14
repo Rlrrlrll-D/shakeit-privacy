@@ -367,8 +367,8 @@ export const HMS_ADS = {
 
 // Реклама AdsGram в Telegram Mini App (platform/telegram.js). Идентификаторы блоков (reward и interstitial)
 // появятся после создания платформы в partner.adsgram.ai (нужен бот и Web App, см. память проекта).
-// Пока пусто: игра работает без рекламы
+// Блоки созданы 2026-11-14: платформа Shake It! (PlatformID 56338)
 export const ADSGRAM = {
-    rewarded: '',
-    interstitial: ''
+    rewarded: '59713',
+    interstitial: 'int-59714'
 };

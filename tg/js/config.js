@@ -360,7 +360,7 @@ export const ADMOB = {
 // идентификаторы Huawei (тестовые ролики, ничего не оплачивают). Настоящие блоки создаются в консоли Petal Ads
 // Publisher после одобрения Merchant Service. force: true — включать адаптер на любом телефоне (только для проверки)
 export const HMS_ADS = {
-    force: true,
+    force: false,
     rewarded: 'testx9dtjwj8hp',
     interstitial: 'testb4znbuh3n2'
 };

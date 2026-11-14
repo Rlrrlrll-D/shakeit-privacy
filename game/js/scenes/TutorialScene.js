@@ -9,7 +9,10 @@ import { loadSetting, saveSetting } from '../util/Settings.js';
 // Четыре карточки: что делать, как трясти, ритм, звёзды. Рисунки — графикой и иконками игры,
 // чтобы не тянуть картинки
 const SEEN = 'tutorialSeen';
-const CARD_H = 196;
+const CARD_H = 226;
+// Текст описаний — обычным жирным шрифтом покрупнее: мелкая «граффити»-гарнитура читалась плохо
+// (модерация Пикабу отклонила игру: «текст очень плохо читается»). Заголовки остаются фирменными
+const BODY_FONT = { fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '26px', fontStyle: 'bold' };
 
 export function tutorialSeen() {
     return loadSetting(SEEN, false);
@@ -79,14 +82,14 @@ export class TutorialScene extends Phaser.Scene {
         g.lineStyle(3, UI_COLORS.border, 1);
         g.strokeRoundedRect(cx - w / 2, cy - CARD_H / 2, w, CARD_H, 22);
 
-        const artX = cx - w / 2 + 92;
+        const artX = cx - w / 2 + 84;
         this[art + 'Art'](artX, cy);
 
-        const textX = artX + 76;
-        const textW = w / 2 + 146;
-        this.add.text(textX, cy - 54, head, { font: uiFont(26), color: UI_COLORS.goldText }).setOrigin(0, 0.5);
-        this.add.text(textX, cy + 16, body, {
-            font: uiFont(21), color: UI_COLORS.light, wordWrap: { width: textW }, lineSpacing: 6
+        const textX = artX + 74;
+        const textW = w - (textX - (cx - w / 2)) - 20;
+        this.add.text(textX, cy - 82, head, { font: uiFont(30), color: UI_COLORS.goldText }).setOrigin(0, 0.5);
+        this.add.text(textX, cy + 20, body, {
+            ...BODY_FONT, color: UI_COLORS.light, wordWrap: { width: textW }, lineSpacing: 7
         }).setOrigin(0, 0.5);
     }
 
